@@ -1,0 +1,1 @@
+suppressPackageStartupMessages(library(ggplot2))

@@ -1,0 +1,30 @@
+---
+title: "Reproducible Research: Peer Assessment 2"
+output: 
+html_document:
+keep_md: true
+---
+
+
+## Loading and preprocessing the data
+```{r echo = TRUE}
+suppressPackageStartupMessages(library(dplyr))
+if(file.exists("StormData.csv.bz2")){
+  #bzfile("StormData.csv.bz2");
+  #df = data.frame(read.csv("StormData.csv"));
+  #unlink("StormData.csv.bz2");
+}else if(file.exists("StormData.csv")){
+  #df = data.frame(read.csv("StormData.csv"));
+}else{
+  echo("ELSE")
+  temp <- tempfile("StormData.csv.bz2");
+  download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",destfile = "StormData.csv.bz2", method = "curl");
+  bzfile("StormData.csv.bz2");
+  #unlink(temp);
+  #df = data.frame(read.csv("StormData.csv"));
+}
+
+#df = mutate(df, date = as.Date(date, format = '%Y-%m-%d'));
+#head(df);
+
+```
