@@ -1,30 +1,176 @@
 ---
-title: "Reproducible Research: Peer Assessment 2"
+title: "Analysis of health and economic consequences of the weather Between 1999 and 2012"
 output: 
 html_document:
 keep_md: true
 ---
 
+## Synopsis
+In this report we aim to describe the consequences on the human health and the economic consequences of the weather in the United States between the date 1. Jan. 1996. and 28. Dec. 2011. To perform this analysis, we obtained storm data from the National Climatic Data Center. The period from 1. Jan. 1996. up to 28. Dec. 2011. because it has the most complete data of all the event types(more [here](https://www.ncdc.noaa.gov/stormevents/details.jsp?type=eventtype)).
+This analysis concludes that the greatest consequences on the health of the human population are tornados, and the greatest consequences for the economy come from flooding.
+
 
 ## Loading and preprocessing the data
+We obtained the data from [Storm Data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) [47Mb]
+
+
+### Reading in the data
+We first check if the data is available localy and if not we download it. After that we load the data into a dataframe.
+```{r echo = TRUE, cache=TRUE}
+suppressPackageStartupMessages(require(dplyr))
+if(file.exists("StormData.csv.bz2")){
+  df = data.frame(read.csv("StormData.csv.bz2"));
+}else{
+  download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",destfile = "StormData.csv.bz2", method = "curl");
+  df = data.frame(read.csv("StormData.csv.bz2"));
+}
+```
+
+Next we check the dimension of the data and display the first few rows.
+
 ```{r echo = TRUE}
 suppressPackageStartupMessages(library(dplyr))
-if(file.exists("StormData.csv.bz2")){
-  #bzfile("StormData.csv.bz2");
-  #df = data.frame(read.csv("StormData.csv"));
-  #unlink("StormData.csv.bz2");
-}else if(file.exists("StormData.csv")){
-  #df = data.frame(read.csv("StormData.csv"));
-}else{
-  echo("ELSE")
-  temp <- tempfile("StormData.csv.bz2");
-  download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",destfile = "StormData.csv.bz2", method = "curl");
-  bzfile("StormData.csv.bz2");
-  #unlink(temp);
-  #df = data.frame(read.csv("StormData.csv"));
-}
-
-#df = mutate(df, date = as.Date(date, format = '%Y-%m-%d'));
-#head(df);
-
+dim(df)
+tbl_df(df)
 ```
+
+We procede to process the data. We convert the BGN_DATE, BGN_TIME, END_DATE, END_TIME from factor to character format.
+
+```{r echo = TRUE, cache=TRUE}
+df = (
+  df %>% mutate(BGN_DATE=as.character(BGN_DATE))
+  %>% mutate(BGN_TIME=as.character(BGN_TIME))
+  %>% mutate(END_DATE=as.character(END_DATE))
+  %>% mutate(END_TIME=as.character(END_TIME))
+)
+```
+
+Next we clean up the property and crop damage data. The columns that we will process are:
+* PROPDMG(double) and PROPDMGEXP(factor, the exponent for PROPDMG) - to calculate the property damage
+* CROPDMG(double) and CROPDMGEXP(factor, the exponent for PROPDMG) - to calculate the crop damage
+The PROPDMGEXP has the following levels:
+`r levels(df$PROPDMGEXP)`
+The CROPDMGEXP has the following levels:
+`r levels(df$CROPDMGEXP)`
+We will convert the levels by the following convention:
+* B or b - billion
+* M or m - million
+* K or k - thousand
+* 0-9 - 10 raised to the power of the nuber of the entry
+* all other - we will assume the exponent is 0
+
+We pass each PROPDMG/PROPDMGEXP and CROPDMG/CROPDMGEXP entry to the function `calculate_damage`
+
+```{r echo = TRUE}
+  calculate_damage <- function(arg1, arg2){
+  multiplier <-0
+  ch = as.character(arg2)
+  if( grepl("B", ch, TRUE) ){
+    multiplier <- 10e9
+  }else if( grepl("M", ch, TRUE) ){
+    multiplier <- 10e6
+  }else if( grepl("K", ch, TRUE) ){
+    multiplier <- 10e3
+  }else if( grepl("[0-9]", ch) ){
+    multiplier <- 10**as.numeric(ch)
+  }
+  return(arg1*multiplier)
+}
+```
+
+We create new columns called `prop_damage` and `crop_damage` that will hold the calculated values.
+
+```{r echo = TRUE, cache=TRUE}
+df$prop_damage = mapply(calculate_damage, df$PROPDMG, df$PROPDMGEXP)
+df$crop_damage = mapply(calculate_damage, df$CROPDMG, df$CROPDMGEXP)
+```
+
+The data we are interested in starts from 1. Jan. 1996. so we filter it.
+
+```{r echo = TRUE, cache=TRUE}
+complete_events_df = df %>% filter(as.Date(strptime(BGN_DATE, format="%m/%d/%Y 0:00:00")) > as.Date("1996-01-01"))
+head(complete_events_df, 1)$BGN_DATE
+tail(complete_events_df, 1)$BGN_DATE
+```
+
+The data is cleaned up and processed and we can check the dimension and first few rows of the data.
+
+```{r echo = TRUE}
+dim(complete_events_df)
+tbl_df(complete_events_df)
+```
+
+
+## Data Processing
+We are interested in answering the two following questions:
+1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+To answer the first question, we select the rows we are interested in(EVTYPE, FATALITIES, INJURIES), group them by the type of the event(EVTYPE), summarise the FATALITIES and INJURIES data, and calculate the total for each event type(EVTYPE) and we sort the data by the newly calculated value(TOTAL) in descending order. We view the first few rows of the population summary.
+
+```{r echo = TRUE}
+population_summary = (
+  complete_events_df %>% select(EVTYPE, FATALITIES, INJURIES) %>% group_by(EVTYPE) 
+  %>% summarize(FATALITIES=sum(FATALITIES), INJURIES=sum(INJURIES))
+  %>% mutate(TOTAL=FATALITIES + INJURIES)
+  %>% arrange(desc(TOTAL))
+)
+dim(population_summary)
+tbl_df(population_summary)
+```
+
+To answer the second question, we select the rows we are interested in(EVTYPE, prop_damage, crop_damage), group them by the type of the event(EVTYPE), summarise the prop_damage and crop_damage data, and calculate the total for each event type(EVTYPE) and we sort the data by the newly calculated value(TOTAL) in descending order. We view the first few rows of the econimic summary.
+
+```{r echo = TRUE}
+economic_summary = (
+  complete_events_df
+  %>% select(EVTYPE, prop_damage, crop_damage)
+  %>% group_by(EVTYPE) 
+  %>% summarize(prop_damage=sum(prop_damage), crop_damage=sum(crop_damage))
+  %>% mutate(TOTAL=prop_damage+crop_damage)
+  %>% arrange(desc(TOTAL))
+)
+
+dim(economic_summary)
+tbl_df(economic_summary)
+```
+
+## Results
+We will make barplots of the `population_summary`. There are a lot of event types so we will take the top 10(ordered by TOTAL) for ploting.
+
+```{r echo = TRUE, fig.width = 9, fig.height = 5}
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(ggplot2))
+
+top_popuplation = head(population_summary, 10) %>% gather(TYPE, value, FATALITIES:TOTAL) %>% arrange(desc(value))
+
+(
+ggplot(top_popuplation, aes(EVTYPE, value))
+  + geom_bar(aes(fill = TYPE), position = "dodge", stat="identity")
+  + xlab("EVENT TYPE")
+  + ylab("NUMBER OF PEOPLE")
+  + ggtitle("Top most harmful events with respect to U.S. population health between 1999 and 2012")
+  + coord_flip()
+)
+```
+
+Next will procede to make barplots of the `economic_summary`. There are a lot of event types so we will take the top 10(ordered by TOTAL) for ploting.
+
+```{r echo = TRUE, fig.width = 9, fig.height = 5}
+top_economic = (
+  head(economic_summary, 10) 
+  %>% mutate(prop_damage=prop_damage/10e9, crop_damage=crop_damage/10e9, TOTAL=TOTAL/10e9) 
+  %>% gather(TYPE, value, prop_damage:TOTAL) %>% arrange(desc(value))
+)
+
+(
+ggplot(top_economic, aes(EVTYPE, value))
++ geom_bar(aes(fill = TYPE), position = "dodge", stat="identity")
++ xlab("EVENT TYPE")
++ ylab("BILLIONS OF $")
++ ggtitle("Top events with bigest consequences respect to the economy of the U.S. between 1999 and 2012")
++ coord_flip()
+)
+```
+
+The conclusion is that the most harmful events for the human population are tornados, and the greatest economic consequences are due to flooding.
